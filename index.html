@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Trouvez le bar, le restaurant ou le lieu le plus équitable en temps de trajet pour tout le groupe, en voiture, à vélo, à pied ou en transports en commun." />
+    <meta name="theme-color" content="#5b3df5" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
+    <title>Barypote · le point de rencontre équitable</title>
+  </head>
+  <body>
+    <div id="app">
+      <aside id="panel">
+        <header class="brand">
+          <div class="logo">🎯</div>
+          <div>
+            <h1>Barypote</h1>
+            <p>Le point de rencontre le plus juste pour tout le monde.</p>
+          </div>
+        </header>
+
+        <section class="step">
+          <h2><span class="num">1</span> Qui vient ?</h2>
+          <ul id="participants"></ul>
+          <div class="row-actions">
+            <button id="add-participant" class="ghost">＋ Ajouter une personne</button>
+            <button id="example" class="link">Essayer avec un exemple</button>
+          </div>
+        </section>
+
+        <section class="step">
+          <h2><span class="num">2</span> Pour faire quoi ?</h2>
+          <div id="categories" class="chips" role="radiogroup" aria-label="Type de lieu"></div>
+        </section>
+
+        <section class="step">
+          <h2><span class="num">3</span> C’est quoi, « équitable » ?</h2>
+          <div id="criteria" class="criteria" role="radiogroup" aria-label="Critère d’équité"></div>
+          <details class="options">
+            <summary>Options avancées</summary>
+            <label>Départ
+              <input type="datetime-local" id="departure" />
+            </label>
+            <label>Trajet maximal pour chacun : <b id="max-time-label"></b>
+              <input type="range" id="max-time" min="15" max="180" step="5" value="90" />
+            </label>
+            <label>Temps pour se garer (voiture) : <b id="parking-label"></b>
+              <input type="range" id="parking" min="0" max="20" step="1" value="5" />
+            </label>
+          </details>
+        </section>
+
+        <div class="cta">
+          <button id="search" class="primary">Trouver le point de rencontre</button>
+          <button id="share" class="ghost" title="Copier un lien à envoyer au groupe">🔗 Partager</button>
+        </div>
+
+        <section id="results" aria-live="polite"></section>
+
+        <footer>
+          Données © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>,
+          itinéraires <a href="https://project-osrm.org" target="_blank" rel="noopener">OSRM</a> /
+          <a href="https://routing.openstreetmap.de" target="_blank" rel="noopener">FOSSGIS</a>,
+          transports <a href="https://transitous.org" target="_blank" rel="noopener">Transitous</a>,
+          adresses <a href="https://photon.komoot.io" target="_blank" rel="noopener">Photon</a>.
+        </footer>
+      </aside>
+
+      <main id="map-wrap">
+        <div id="map"></div>
+        <div class="map-tools">
+          <label class="toggle"><input type="checkbox" id="heat-toggle" /> Carte d’équité</label>
+        </div>
+        <div id="pick-hint" hidden>Cliquez sur la carte pour placer <b></b> · <button class="link" id="pick-cancel">annuler</button></div>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
