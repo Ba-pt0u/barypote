@@ -102,5 +102,6 @@ et ouvrir l’appli depuis l’extérieur, la placer derrière un reverse proxy 
 
 ## GitHub Pages
 
-Le workflow `.github/workflows/deploy.yml` publie aussi l’appli sur **GitHub Pages** à chaque push sur `main`.
-À activer une fois : *Settings → Pages → Build and deployment → Source : GitHub Actions*.
+Le workflow `.github/workflows/deploy.yml` peut aussi publier l’appli sur **GitHub Pages** à chaque push sur `main`.
+Pour l’activer : *Settings → Pages → Build and deployment → Source : GitHub Actions*, puis
+*Settings → Secrets and variables → Actions → Variables* : créer `DEPLOY_PAGES` = `true`.
