@@ -302,6 +302,8 @@ function choosePlace(p: Participant, place: Place | undefined) {
 }
 
 function locate(p: Participant) {
+  // Les navigateurs n'autorisent la géolocalisation qu'en HTTPS (ou sur localhost).
+  if (!window.isSecureContext) return toast('« Ma position » nécessite d’ouvrir l’appli en HTTPS.');
   if (!navigator.geolocation) return toast('La géolocalisation n’est pas disponible sur ce navigateur.');
   navigator.geolocation.getCurrentPosition(
     async (pos) => {

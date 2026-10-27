@@ -9,14 +9,18 @@ const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 
 const PORT = 4179;
-const BASE = `http://localhost:${PORT}/`;
+// E2E_URL permet de tester une instance déjà lancée (ex. le conteneur Docker).
+const BASE = process.env.E2E_URL ?? `http://localhost:${PORT}/`;
 mkdirSync('e2e/screenshots', { recursive: true });
 
-const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'pipe' });
-await new Promise((resolve, reject) => {
-  server.stdout.on('data', (d) => String(d).includes(String(PORT)) && resolve());
-  server.on('exit', (c) => reject(new Error(`vite preview exited ${c}`)));
-});
+let server = null;
+if (!process.env.E2E_URL) {
+  server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'pipe' });
+  await new Promise((resolve, reject) => {
+    server.stdout.on('data', (d) => String(d).includes(String(PORT)) && resolve());
+    server.on('exit', (c) => reject(new Error(`vite preview exited ${c}`)));
+  });
+}
 
 const browser = await chromium.launch();
 let failed = false;
@@ -125,6 +129,6 @@ try {
   failed = true;
 } finally {
   await browser.close();
-  server.kill();
+  server?.kill();
 }
 process.exit(failed ? 1 : 0);

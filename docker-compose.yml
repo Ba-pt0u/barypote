@@ -1,0 +1,11 @@
+# Pour Unraid (plugin « Docker Compose Manager ») ou tout hôte Docker :
+#   docker compose up -d   →   http://<ip-du-nas>:8080
+services:
+  barypote:
+    image: ghcr.io/ba-pt0u/barypote:latest
+    # Pour construire l'image sur place à partir du code plutôt que de la télécharger :
+    # build: .
+    container_name: barypote
+    ports:
+      - "8080:80"
+    restart: unless-stopped

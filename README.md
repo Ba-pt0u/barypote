@@ -56,7 +56,51 @@ npm run e2e        # test navigateur (Playwright/Chromium), API simulées, aprè
 
 Code : `src/engine.ts` (algorithme), `src/api/` (services externes), `src/map.ts` (carte Leaflet), `src/main.ts` (interface).
 
-## Déploiement
+## Auto-hébergement avec Docker (Unraid, Synology, etc.)
 
-Le workflow `.github/workflows/deploy.yml` teste, construit et publie sur **GitHub Pages** à chaque push sur `main`.
+L’image est un simple serveur nginx (~75 Mo) qui sert l’appli : rien à configurer, aucune donnée stockée.
+C’est le **navigateur** des utilisateurs qui interroge les services cartographiques, le NAS n’a pas besoin d’accès Internet.
+Elle est publiée automatiquement sur `ghcr.io/ba-pt0u/barypote:latest` (amd64 et arm64) à chaque push sur `main`.
+
+> **Une fois après la première publication**, rendre l’image publique pour que le NAS puisse la télécharger sans
+> identifiants : GitHub → profil → *Packages* → `barypote` → *Package settings* → *Change visibility* → *Public*.
+
+### Unraid
+
+**Option A, modèle de conteneur (le plus simple)**
+
+1. Dans un terminal Unraid, récupérer le modèle :
+   ```bash
+   wget -O /boot/config/plugins/dockerMan/templates-user/my-barypote.xml \
+     https://raw.githubusercontent.com/Ba-pt0u/barypote/main/unraid/barypote.xml
+   ```
+2. Onglet *Docker* → *Add Container* → *Template* : choisir **barypote**.
+3. Ajuster le port si 8080 est déjà pris → *Apply*.
+4. Ouvrir `http://IP-DU-NAS:8080` (ou *WebUI* dans le menu du conteneur).
+
+**Option B, à la main** : *Add Container*, puis *Repository* = `ghcr.io/ba-pt0u/barypote:latest`,
+*Add another Path, Port…* → *Port*, *Container Port* = `80`, *Host Port* = `8080`.
+
+**Option C, Docker Compose** (plugin *Docker Compose Manager*) : utiliser le fichier `docker-compose.yml` du dépôt.
+
+Mises à jour : *Check for Updates* dans l’onglet *Docker* récupère la dernière image.
+
+### Ailleurs
+
+```bash
+docker run -d --name barypote -p 8080:80 --restart unless-stopped ghcr.io/ba-pt0u/barypote:latest
+# ou, pour construire depuis le code :
+docker build -t barypote . && docker run -d -p 8080:80 barypote
+```
+
+### HTTPS (recommandé)
+
+En simple `http://` sur le réseau local, tout fonctionne sauf **« Ma position »** (les navigateurs réservent la
+géolocalisation au HTTPS) ; la copie du lien passe alors par une fenêtre à copier à la main. Pour en profiter
+et ouvrir l’appli depuis l’extérieur, la placer derrière un reverse proxy avec certificat
+(Nginx Proxy Manager, SWAG, Traefik, Caddy…) pointant vers `http://IP-DU-NAS:8080`.
+
+## GitHub Pages
+
+Le workflow `.github/workflows/deploy.yml` publie aussi l’appli sur **GitHub Pages** à chaque push sur `main`.
 À activer une fois : *Settings → Pages → Build and deployment → Source : GitHub Actions*.

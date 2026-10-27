@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>barypote</Name>
+  <Repository>ghcr.io/ba-pt0u/barypote:latest</Repository>
+  <Registry>https://github.com/Ba-pt0u/barypote/pkgs/container/barypote</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/Ba-pt0u/barypote/issues</Support>
+  <Project>https://github.com/Ba-pt0u/barypote</Project>
+  <Overview>Barypote trouve le point de rencontre le plus équitable en temps de trajet pour un groupe (voiture, transports en commun, vélo, marche) et propose bars, restaurants et lieux autour. Appli web statique : aucune donnée stockée, aucune clé d'API.</Overview>
+  <Category>Tools: Other</Category>
+  <WebUI>http://[IP]:[PORT:80]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/Ba-pt0u/barypote/main/unraid/barypote.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/Ba-pt0u/barypote/main/unraid/barypote.png</Icon>
+  <ExtraParams>--restart unless-stopped</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config Name="Port web" Target="80" Default="8080" Mode="tcp" Description="Port du NAS sur lequel ouvrir l'appli (http://IP-du-NAS:port)." Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+</Container>
