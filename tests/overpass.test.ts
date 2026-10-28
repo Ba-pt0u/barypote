@@ -4,10 +4,16 @@ import { CATEGORIES } from '../src/categories';
 
 describe('overpass', () => {
   it('requête avec un filtre par famille de tags', () => {
-    const q = buildQuery(CATEGORIES.find((c) => c.id === 'culture')!, { lat: 48.1, lon: -1.6 }, 1000);
+    const q = buildQuery(CATEGORIES.find((c) => c.id === 'culture')!, { center: { lat: 48.1, lon: -1.6 }, radius: 1000 });
     expect(q).toContain('nwr["tourism"~"^(museum|gallery)$"]["name"](around:1000,48.100000,-1.600000);');
     expect(q).toContain('nwr["amenity"~"^(theatre|arts_centre)$"]["name"](around:1000,48.100000,-1.600000);');
     expect(q).toMatch(/out center tags \d+;$/);
+  });
+
+  it('requête limitée à un polygone', () => {
+    const q = buildQuery(CATEGORIES[0], { polygon: [{ lat: 48, lon: 2 }, { lat: 48.1, lon: 2 }, { lat: 48.1, lon: 2.1 }] }, 200);
+    expect(q).toContain('(poly:"48.00000 2.00000 48.10000 2.00000 48.10000 2.10000")');
+    expect(q).toMatch(/out center tags 200;$/);
   });
 
   it('parse : centre des bâtiments, doublons et lieux sans nom', () => {

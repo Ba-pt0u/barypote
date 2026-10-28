@@ -2,17 +2,32 @@ import { mapLimit } from './api/http';
 import { findPois } from './api/overpass';
 import { travelMatrix } from './api/osrm';
 import { reachableStops, TransitReach } from './api/transit';
-import { centroid, grid, haversine, spread } from './geo';
+import { centroid, convexHull, grid, haversine, spread, squareCorners } from './geo';
 import { score } from './scoring';
-import type { Candidate, LatLon, Mode, Participant, Poi, SearchOptions, SearchResult } from './types';
+import type {
+  Candidate,
+  GridLayer,
+  LatLon,
+  Mode,
+  Participant,
+  Poi,
+  SearchEvent,
+  SearchOptions,
+  SearchResult,
+  StepId,
+} from './types';
 
 type Located = Participant & { pos: LatLon };
-type Progress = (message: string) => void;
 
 const COARSE = 7;
 const FINE = 5;
+/** Chaque niveau d'affinage divise la taille des cellules par ce facteur. */
+const ZOOM = 2.5;
+const MAX_LEVELS = 3;
+/** On n'affine pas en dessous de cette taille de cellule (mètres). */
+const MIN_CELL = 250;
 const MAX_PLACES = 12;
-const POI_RADII = [500, 1000, 2000, 4000];
+const MAX_EVALUATED = 50;
 /** Vitesse de repli pour les transports en commun si Transitous ne répond pas. */
 const TRANSIT_FALLBACK_KMH = 18;
 
@@ -28,10 +43,9 @@ export class Evaluator {
   ) {}
 
   /** Charge une fois pour toutes les arrêts atteignables par chaque usager des transports. */
-  async prepare(progress: Progress) {
+  async prepare() {
     const transit = this.people.map((p, i) => ({ p, i })).filter(({ p }) => p.mode === 'transit');
     await mapLimit(transit, 3, async ({ p, i }) => {
-      progress(`Transports en commun depuis chez ${p.name}…`);
       try {
         const stops = await reachableStops(p.pos, this.opts.departure, Math.min(this.opts.maxTime, 120));
         if (!stops.length) throw new Error('aucun arrêt atteignable');
@@ -111,57 +125,127 @@ export class Evaluator {
 
 const best = (cs: Candidate[]) => cs.reduce((a, b) => (b.score < a.score ? b : a));
 
+/** Écart de score toléré pour qu'un point fasse partie de la « zone équitable ». */
+export const fairMargin = (bestScore: number) => Math.max(4, bestScore * 0.15);
+
+/** Polygone englobant les cellules dont le score est proche du meilleur. */
+export function fairHull(layer: GridLayer, bestScore: number): LatLon[] {
+  const fair = layer.cells.filter((c) => c.score <= bestScore + fairMargin(bestScore));
+  return convexHull(fair.flatMap((c) => squareCorners(c, layer.step)));
+}
+
+const km = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1).replace('.', ',')} km` : `${Math.round(m)} m`);
+
 export async function findMeetingPoint(
   participants: Participant[],
   opts: SearchOptions,
-  progress: Progress = () => {},
+  emit: (e: SearchEvent) => void = () => {},
 ): Promise<SearchResult> {
   const people = participants.filter((p): p is Located => p.pos != null);
   if (people.length < 2) throw new Error('Il faut au moins deux participants avec une adresse.');
+  const step = (id: StepId, state: 'active' | 'done' | 'error', label: string) => emit({ type: 'step', id, state, label });
 
   const ev = new Evaluator(people, opts);
-  await ev.prepare(progress);
+  if (people.some((p) => p.mode === 'transit')) {
+    step('transit', 'active', 'Réseau de transports en commun de chacun…');
+    await ev.prepare();
+    step('transit', 'done', 'Transports en commun chargés');
+  }
 
   // 1. Grille grossière autour du centre géographique (+ arrêts de transport, + domiciles).
-  progress('Recherche de la zone la plus équitable…');
+  step('zone', 'active', 'Recherche de la zone la plus équitable…');
   const positions = people.map((p) => p.pos);
   const center = centroid(positions);
   const extent = Math.max(spread(positions) * 1.2, 3000);
-  const step = extent / (COARSE - 1);
-  const coarsePoints = grid(center, COARSE, step);
+  let cell = extent / (COARSE - 1);
+  const coarsePoints = grid(center, COARSE, cell);
   const coarse = await ev.evaluate([...coarsePoints, ...ev.transitStops(), ...positions]);
-  const coarseGrid = coarse.slice(0, coarsePoints.length);
+  const grids: GridLayer[] = [{ cells: coarse.slice(0, coarsePoints.length), step: cell, level: 0 }];
+  emit({ type: 'grid', layer: grids[0] });
 
   let zone = best(coarse);
   if (!Number.isFinite(zone.score)) {
+    step('zone', 'error', 'Aucune zone accessible à tous');
     throw new Error(
       `Aucun lieu n’est accessible à tous en moins de ${opts.maxTime} min. Augmentez le temps de trajet maximal.`,
     );
   }
+  const firstZone = zone;
+  let hull = fairHull(grids[0], zone.score);
+  emit({ type: 'zone', best: zone, hull, level: 0 });
+  step('zone', 'done', 'Zone équitable trouvée');
 
-  // 2. Affinage autour de la meilleure zone.
-  progress('Affinage du point de rencontre…');
-  const fine = await ev.evaluate(grid(zone, FINE, step / 2.5));
-  zone = best([zone, ...fine]);
+  // 2. Les lieux de la zone équitable sont cherchés pendant l'affinage du point.
+  const poisSearch = opts.category.filters.length ? searchPois(opts, hull, zone, emit, step) : null;
+  poisSearch?.catch(() => {}); // l'erreur éventuelle est traitée plus bas
 
-  // 3. Lieux de la catégorie choisie autour du point.
+  // 3. Affinage : grilles de plus en plus fines autour du meilleur point.
+  for (let level = 1; level <= MAX_LEVELS && cell / ZOOM >= MIN_CELL; level++) {
+    cell /= ZOOM;
+    step('refine', 'active', `Affinage de la zone (cellules de ${km(cell)})…`);
+    const layer: GridLayer = { cells: await ev.evaluate(grid(zone, FINE, cell)), step: cell, level };
+    grids.push(layer);
+    emit({ type: 'grid', layer });
+    zone = best([zone, ...layer.cells]);
+    hull = fairHull(layer, zone.score);
+    emit({ type: 'zone', best: zone, hull, level });
+  }
+  step('refine', 'done', 'Point de rencontre affiné');
+
+  // 4. Classement des lieux selon les temps de trajet réels.
   let places: Candidate[] = [];
-  if (opts.category.filters.length) {
-    let pois: Poi[] = [];
-    for (const radius of POI_RADII) {
-      progress(`Recherche de lieux (${opts.category.label.toLowerCase()}) à moins de ${radius >= 1000 ? `${radius / 1000} km` : `${radius} m`}…`);
-      pois = await findPois(opts.category, zone, radius);
-      if (pois.length >= 8 || radius >= Math.max(extent / 3, POI_RADII[1])) break;
+  if (poisSearch) {
+    let pois = await poisSearch;
+    if (haversine(zone, firstZone) > 600 || pois.length < 5) {
+      // Le point a bougé pendant l'affinage, ou la zone est pauvre en lieux : on cherche aussi autour du point final.
+      pois = dedupe([...pois, ...(await poisAround(opts, zone, pois.length < 5 ? 5000 : 900).catch(() => []))]);
+      emit({ type: 'pois', pois });
     }
     if (!pois.length) ev.warnings.push(`Aucun lieu « ${opts.category.label} » trouvé autour du point.`);
-    pois = pois.sort((a, b) => haversine(a, zone) - haversine(b, zone)).slice(0, 40);
+    pois = pois.sort((a, b) => haversine(a, zone) - haversine(b, zone)).slice(0, MAX_EVALUATED);
     if (pois.length) {
-      progress('Calcul des temps de trajet vers chaque lieu…');
-      places = (await ev.evaluate(pois, pois))
-        .sort((a, b) => a.score - b.score)
-        .slice(0, MAX_PLACES);
+      step('rank', 'active', `Temps de trajet vers ${pois.length} lieux…`);
+      places = (await ev.evaluate(pois, pois)).sort((a, b) => a.score - b.score).slice(0, MAX_PLACES);
+      step('rank', 'done', 'Lieux classés');
     }
   }
 
-  return { zone, grid: coarseGrid, places, warnings: ev.warnings };
+  return { zone, hull, grids, places, warnings: ev.warnings };
+}
+
+function dedupe(pois: Poi[]): Poi[] {
+  const seen = new Set<string>();
+  return pois.filter((p) => !seen.has(p.id) && seen.add(p.id));
+}
+
+async function poisAround(opts: SearchOptions, center: LatLon, radius: number) {
+  return findPois(opts.category, { center, radius });
+}
+
+/**
+ * Deux requêtes en parallèle : dans toute la zone équitable (couverture), et au plus près du
+ * meilleur point (dans les quartiers denses, la première ne renvoie qu'un échantillon).
+ */
+async function searchPois(
+  opts: SearchOptions,
+  hull: LatLon[],
+  zone: LatLon,
+  emit: (e: SearchEvent) => void,
+  step: (id: StepId, state: 'active' | 'done' | 'error', label: string) => void,
+): Promise<Poi[]> {
+  const what = opts.category.label.toLowerCase();
+  step('pois', 'active', `Recherche des lieux (${what}) dans la zone…`);
+  const results = await Promise.allSettled([
+    hull.length >= 3 ? findPois(opts.category, { polygon: hull }, 200) : Promise.resolve([]),
+    poisAround(opts, zone, 900),
+  ]);
+  const ok = results.filter((r): r is PromiseFulfilledResult<Poi[]> => r.status === 'fulfilled');
+  if (!ok.length) {
+    step('pois', 'error', 'Recherche de lieux impossible');
+    throw (results[0] as PromiseRejectedResult).reason;
+  }
+  const pois = dedupe(ok.flatMap((r) => r.value));
+  emit({ type: 'pois', pois });
+  step('pois', 'done', `${pois.length} lieu${pois.length > 1 ? 'x' : ''} trouvé${pois.length > 1 ? 's' : ''} dans la zone`);
+  return pois;
 }

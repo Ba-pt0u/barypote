@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { centroid, decodePolyline, decodePolylineNear, grid, haversine, offset } from '../src/geo';
+import { centroid, convexHull, decodePolyline, decodePolylineNear, grid, haversine, offset } from '../src/geo';
 
 describe('geo', () => {
   it('haversine Paris → Lyon ≈ 392 km', () => {
@@ -36,5 +36,20 @@ describe('geo', () => {
     // Même chaîne, interprétée en précision 6 elle donnerait 3.85,-12.02 : on doit choisir 5.
     const pts = decodePolylineNear('_p~iF~ps|U_ulLnnqC_mqNvxq`@', { lat: 38.5, lon: -120.2 });
     expect(pts[0]).toEqual([38.5, -120.2]);
+  });
+});
+
+describe('convexHull', () => {
+  it('ne garde que le contour', () => {
+    const h = convexHull([
+      { lat: 0, lon: 0 },
+      { lat: 0, lon: 2 },
+      { lat: 2, lon: 2 },
+      { lat: 2, lon: 0 },
+      { lat: 1, lon: 1 },
+      { lat: 1, lon: 2 },
+    ]);
+    expect(h).toHaveLength(4);
+    expect(h).not.toContainEqual({ lat: 1, lon: 1 });
   });
 });

@@ -55,7 +55,21 @@ export function handle(rawUrl, method = 'GET', body = '') {
   const url = new URL(rawUrl);
   const host = url.host;
 
-  if (host.endsWith('basemaps.cartocdn.com')) {
+  if (host === 'tiles.openfreemap.org') {
+    // Style minimal : un simple fond uni suffit à vérifier que la carte vectorielle s'initialise.
+    const dark = url.pathname.endsWith('/dark');
+    return {
+      status: 200,
+      json: {
+        version: 8,
+        name: dark ? 'dark' : 'positron',
+        sources: {},
+        layers: [{ id: 'bg', type: 'background', paint: { 'background-color': dark ? '#1b1d22' : '#eef0f2' } }],
+      },
+    };
+  }
+
+  if (host === 'tile.openstreetmap.org') {
     // Tuile PNG 1×1 gris clair.
     const png = Buffer.from(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
@@ -185,9 +199,20 @@ export function handle(rawUrl, method = 'GET', body = '') {
 
   if (url.pathname.endsWith('/interpreter')) {
     const q = decodeURIComponent(String(body).replace(/^data=/, '').replace(/\+/g, ' '));
+    let radius;
+    let center;
     const m = q.match(/around:(\d+),(-?[\d.]+),(-?[\d.]+)/);
-    const radius = Number(m[1]);
-    const center = { lat: Number(m[2]), lon: Number(m[3]) };
+    if (m) {
+      radius = Number(m[1]);
+      center = { lat: Number(m[2]), lon: Number(m[3]) };
+    } else {
+      const nums = q.match(/poly:"([^"]+)"/)[1].split(' ').map(Number);
+      const pts = [];
+      for (let i = 0; i < nums.length; i += 2) pts.push({ lat: nums[i], lon: nums[i + 1] });
+      center = { lat: pts.reduce((s, p) => s + p.lat, 0) / pts.length, lon: pts.reduce((s, p) => s + p.lon, 0) / pts.length };
+      radius = Math.min(...pts.map((p) => haversine(center, p)));
+    }
+    const idBase = m ? 1000 : 2000;
     const amenity = (q.match(/"amenity"[=~]"\^?\(?([a-z_]+)/) ?? [])[1] ?? 'bar';
     const elements = BAR_NAMES.map((name, k) => {
       const ang = (k / BAR_NAMES.length) * 2 * Math.PI;
@@ -195,7 +220,7 @@ export function handle(rawUrl, method = 'GET', body = '') {
       const p = offset(center, Math.cos(ang) * r, Math.sin(ang) * r);
       return {
         type: k % 3 ? 'node' : 'way',
-        id: 1000 + k,
+        id: idBase + k,
         ...(k % 3 ? { lat: p.lat, lon: p.lon } : { center: p }),
         tags: { name, amenity, 'addr:street': 'Rue de la Roquette', 'addr:housenumber': String(10 + k), opening_hours: 'Mo-Su 17:00-02:00' },
       };

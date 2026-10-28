@@ -35,6 +35,10 @@ async function newPage(viewport, colorScheme = 'light') {
     const req = route.request();
     if (req.url().startsWith(BASE)) return route.continue();
     const r = handle(req.url(), req.method(), req.postData() ?? '');
+    // Délais proches des vrais services, pour voir la recherche progresser.
+    const host = new URL(req.url()).host;
+    const delay = host.includes('overpass') ? 1500 : host.includes('routing') || host.includes('transitous') ? 300 : 0;
+    if (delay) await new Promise((res) => setTimeout(res, delay));
     if (!r) {
       console.log('  (non simulé)', req.url());
       return route.abort();
@@ -58,6 +62,9 @@ try {
   const { page, errors, ctx } = await newPage({ width: 1366, height: 860 });
   await page.goto(BASE);
   check((await page.locator('.participant').count()) === 2, 'deux participants vides au démarrage');
+  await page.locator('.leaflet-gl-layer, .maplibregl-canvas').first().waitFor({ timeout: 10000 });
+  check(await page.locator('.raster-tiles').count() === 0, 'fond de carte vectoriel OpenFreeMap');
+  check((await page.locator('.leaflet-control-attribution').innerText()).includes('OpenFreeMap'), 'attribution OpenFreeMap');
 
   const addr = page.locator('.participant').first().locator('.p-addr');
   await addr.fill('Montmartre');
@@ -71,7 +78,14 @@ try {
   await page.click('[data-cat="restaurant"]');
   await page.click('[data-crit="minimax"]');
   await page.click('#search');
+  await page.locator('.live-zone .zone-card').waitFor({ timeout: 10000 });
+  check((await page.locator('.leaflet-overlay-pane .heat-cell').count()) >= 49, 'grille d’équité affichée pendant la recherche');
+  check((await page.locator('.leaflet-overlay-pane .fair-zone').count()) === 1, 'zone équitable dessinée avant les lieux');
+  await page.locator('.poi-dot').first().waitFor({ timeout: 10000 });
+  check((await page.locator('.steps li').count()) >= 3, `étapes affichées : ${(await page.locator('.steps').innerText()).replace(/\n/g, ' | ')}`);
+  await page.screenshot({ path: 'e2e/screenshots/desktop-live.png' });
   await page.locator('.place').first().waitFor({ timeout: 20000 });
+  check((await page.locator('.leaflet-overlay-pane .fair-zone').count()) === 1, 'zone équitable conservée sur le résultat');
   check((await page.locator('.place').count()) > 3, `${await page.locator('.place').count()} restaurants classés`);
   check((await page.locator('.zone-card .bars li').count()) === 4, 'temps de trajet de chacun vers le point');
   await page.locator('.place.selected .routes li').first().waitFor({ timeout: 10000 });
@@ -111,7 +125,11 @@ try {
 
   // --- Mobile, thème sombre ------------------------------------------------------------
   const m = await newPage({ width: 390, height: 844 }, 'dark');
+  // OpenFreeMap en panne : la carte doit basculer sur les tuiles OpenStreetMap.
+  await m.ctx.route('https://tiles.openfreemap.org/**', (r) => r.fulfill({ status: 503, body: 'down' }));
   await m.page.goto(BASE);
+  await m.page.locator('.raster-tiles img.leaflet-tile').first().waitFor({ timeout: 10000 });
+  check(true, 'repli sur les tuiles OpenStreetMap si OpenFreeMap est injoignable');
   await m.page.click('#example');
   await m.page.click('#search');
   await m.page.locator('.place').first().waitFor({ timeout: 20000 });
@@ -122,7 +140,9 @@ try {
   await m.page.locator('.place.selected .routes li').first().waitFor();
   await m.page.locator('.place.selected').scrollIntoViewIfNeeded();
   await m.page.screenshot({ path: 'e2e/screenshots/mobile-dark-place.png' });
-  check(m.errors.length === 0, `mobile : aucune erreur JS ${m.errors.length ? JSON.stringify(m.errors) : ''}`);
+  // Le 503 simulé d'OpenFreeMap est attendu.
+  const mErrors = m.errors.filter((e) => !e.includes('503'));
+  check(mErrors.length === 0, `mobile : aucune erreur JS ${mErrors.length ? JSON.stringify(mErrors) : ''}`);
   await m.ctx.close();
 } catch (e) {
   console.error(e);

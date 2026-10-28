@@ -90,3 +90,27 @@ export function decodePolylineNear(str: string, start: LatLon, precisions = [7, 
   }
   return best;
 }
+
+/** Enveloppe convexe (algorithme de la chaîne monotone), dans le sens trigonométrique. */
+export function convexHull(points: LatLon[]): LatLon[] {
+  const pts = [...points].sort((a, b) => a.lon - b.lon || a.lat - b.lat);
+  if (pts.length < 3) return pts;
+  const cross = (o: LatLon, a: LatLon, b: LatLon) =>
+    (a.lon - o.lon) * (b.lat - o.lat) - (a.lat - o.lat) * (b.lon - o.lon);
+  const half = (list: LatLon[]) => {
+    const out: LatLon[] = [];
+    for (const p of list) {
+      while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop();
+      out.push(p);
+    }
+    out.pop();
+    return out;
+  };
+  return [...half(pts), ...half([...pts].reverse())];
+}
+
+/** Coins du carré de côté `size` mètres centré sur `p`. */
+export function squareCorners(p: LatLon, size: number): LatLon[] {
+  const h = size / 2;
+  return [offset(p, -h, -h), offset(p, h, -h), offset(p, h, h), offset(p, -h, h)];
+}

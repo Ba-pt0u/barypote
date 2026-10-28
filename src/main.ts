@@ -8,7 +8,7 @@ import { centroid } from './geo';
 import { MeetingMap } from './map';
 import { CRITERIA, formatMinutes, stats } from './scoring';
 import { decodeState, encodeState } from './share';
-import type { Candidate, Criterion, LatLon, Mode, Participant, Route, SearchResult } from './types';
+import type { Candidate, Criterion, LatLon, Mode, Participant, Route, SearchEvent, SearchResult, StepId } from './types';
 
 const COLORS = ['#e4572e', '#2e86ab', '#8a4fff', '#17a398', '#f2a541', '#d7263d', '#3d5a80', '#43aa8b', '#b5179e', '#6c757d'];
 const MAX_PEOPLE = 10;
@@ -142,7 +142,7 @@ function renderParticipants() {
     <li class="participant" data-id="${p.id}" style="--c:${p.color}">
       <div class="p-top">
         <span class="dot" aria-hidden="true">${esc((p.name.trim()[0] ?? '?').toUpperCase())}</span>
-        <input class="p-name" value="${esc(p.name)}" aria-label="Nom" maxlength="30" />
+        <input class="p-name" value="${esc(p.name)}" aria-label="Nom" maxlength="30" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" />
         <div class="modes" role="radiogroup" aria-label="Mode de transport de ${esc(p.name)}">
           ${MODES.map(
             (m) =>
@@ -152,7 +152,7 @@ function renderParticipants() {
         <button type="button" class="icon remove" title="Retirer" aria-label="Retirer ${esc(p.name)}" ${state.participants.length <= 2 ? 'disabled' : ''}>✕</button>
       </div>
       <div class="addr">
-        <input class="p-addr ${p.pos ? 'ok' : ''}" value="${esc(p.label)}" placeholder="Adresse, gare, quartier…" aria-label="Adresse de ${esc(p.name)}" autocomplete="off" />
+        <input class="p-addr ${p.pos ? 'ok' : ''}" value="${esc(p.label)}" placeholder="Adresse, gare, quartier…" aria-label="Adresse de ${esc(p.name)}" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" />
         <button type="button" class="icon locate" title="Ma position actuelle" aria-label="Utiliser ma position">◎</button>
         <button type="button" class="icon pick" title="Choisir sur la carte" aria-label="Choisir sur la carte">📍</button>
         <ul class="suggestions" role="listbox" hidden></ul>
@@ -405,11 +405,28 @@ async function search() {
   state.selected = null;
   state.routes.clear();
   searchBtn.disabled = true;
-  map.clearResults();
+  map.beginSearch();
   const people = state.participants.filter((p) => p.pos);
-  const setProgress = (msg: string) =>
-    (results.innerHTML = `<div class="progress"><span class="spinner"></span>${esc(msg)}</div>`);
-  setProgress('Préparation…');
+  results.innerHTML = `<ol class="steps"></ol><div class="live-zone"></div>`;
+  const steps = new Map<StepId, { state: string; label: string }>();
+  const onEvent = (e: SearchEvent) => {
+    switch (e.type) {
+      case 'step':
+        steps.set(e.id, { state: e.state, label: e.label });
+        renderSteps(steps);
+        break;
+      case 'grid':
+        map.addGridLayer(e.layer, people);
+        break;
+      case 'zone':
+        map.showFairZone(e.hull, e.best, e.level, people);
+        renderLiveZone(e.best, e.level, people);
+        break;
+      case 'pois':
+        map.showCandidatePois(e.pois);
+        break;
+    }
+  };
   try {
     const category = CATEGORIES.find((c) => c.id === state.category)!;
     const res = await findMeetingPoint(
@@ -421,13 +438,13 @@ async function search() {
         maxTime: Number(maxTime.value),
         parking: Number(parking.value),
       },
-      setProgress,
+      onEvent,
     );
     if (missing.length) res.warnings.unshift(`${missing.map((p) => p.name).join(', ')} : adresse manquante, ignoré(e)s.`);
     state.result = res;
     state.zoneLabel = '';
     renderResults(people);
-    map.showResult(res.zone, res.grid, res.places, people);
+    map.showResult(res, people);
     reverseGeocode(res.zone).then((label) => {
       state.zoneLabel = label;
       const el = results.querySelector('.zone-label');
@@ -441,6 +458,29 @@ async function search() {
     state.searching = false;
     searchBtn.disabled = false;
   }
+}
+
+function renderSteps(steps: Map<StepId, { state: string; label: string }>) {
+  const ol = results.querySelector('.steps');
+  if (!ol) return;
+  ol.innerHTML = [...steps.values()]
+    .map(
+      ({ state: st, label }) =>
+        `<li class="${st}">${st === 'active' ? '<span class="spinner"></span>' : st === 'done' ? '<span class="ok">✓</span>' : '<span class="ko">✕</span>'}${esc(label)}</li>`,
+    )
+    .join('');
+}
+
+/** Point provisoire, mis à jour à chaque niveau d'affinage. */
+function renderLiveZone(best: Candidate, level: number, people: Participant[]) {
+  const box = results.querySelector('.live-zone');
+  if (!box) return;
+  const scale = Math.max(...best.times.filter(Number.isFinite), 1);
+  box.innerHTML = `<div class="zone-card live">
+      <div class="zone-head"><span class="zone-icon">🎯</span><div><small>Zone équitable${level ? ` · affinage ${level}` : ''}</small><b>Meilleur point provisoire</b></div></div>
+      ${timeBars(best, people, scale)}
+      ${metaLine(best)}
+    </div>`;
 }
 
 function timeBars(c: Candidate, people: Participant[], scale: number) {

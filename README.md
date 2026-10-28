@@ -16,6 +16,8 @@ restaurants, cafés… autour, classés selon le critère d’équité choisi.
   - *Total minimal* : minimise la somme des trajets.
 - **Types de lieux** : bar, restaurant, café, sur le pouce, activité (bowling, escape game, ciné…), culture, parc, gare, ou juste le point.
 - **Carte** avec le départ de chacun (marqueurs déplaçables), le point idéal, les lieux numérotés et, au clic, **les itinéraires de chacun** (lignes de métro/bus détaillées).
+- **Recherche en direct** : la grille d’équité s’affiche dès les premiers calculs, la **zone équitable** (contour
+  pointillé) se resserre à chaque niveau d’affinage, et les lieux de cette zone sont cherchés en parallèle.
 - **Carte d’équité** : une couche de chaleur montre les zones justes (vert) et injustes (rouge).
 - **Lien de partage** : tout le groupe (adresses, modes, préférences) tient dans l’URL, à envoyer dans la conversation.
 - **Résumé copiable** (« On se retrouve à… ») avec le temps de trajet de chacun.
@@ -27,8 +29,10 @@ restaurants, cafés… autour, classés selon le critère d’équité choisi.
 1. **Transports en commun** : pour chaque usager, un seul appel Transitous *one-to-all* renvoie tous les arrêts
    atteignables et leur temps d’accès ; le temps vers n’importe quel point = meilleur arrêt proche + marche.
 2. **Recherche de la zone** : une grille de 7×7 points couvrant le groupe (plus les arrêts accessibles à tous et
-   les domiciles) est évaluée d’un coup via les matrices OSRM, puis la meilleure zone est affinée sur une grille plus fine.
-3. **Lieux** : les établissements OpenStreetMap (Overpass) autour du point sont évalués de la même façon et classés.
+   les domiciles) est évaluée d’un coup via les matrices OSRM. Les cellules proches du meilleur score forment la
+   zone équitable, affinée ensuite jusqu’à 3 fois sur des grilles 5×5 de plus en plus fines.
+3. **Lieux** : dès la première zone connue, deux requêtes Overpass partent en parallèle (dans tout le polygone de la
+   zone, et au plus près du meilleur point) ; les lieux trouvés sont ensuite évalués et classés sur temps réels.
 4. **Itinéraires exacts** calculés à la sélection d’un lieu (les temps marqués « ≈ » sont des estimations).
 
 Tout tourne dans le navigateur, **sans clé d’API ni serveur** :
@@ -39,7 +43,7 @@ Tout tourne dans le navigateur, **sans clé d’API ni serveur** :
 | Voiture, vélo, marche | [OSRM FOSSGIS](https://routing.openstreetmap.de), secours [OSRM démo](https://project-osrm.org) |
 | Transports en commun | [Transitous](https://transitous.org) (MOTIS, données GTFS ouvertes) |
 | Lieux | [Overpass API](https://overpass-api.de) (OpenStreetMap) |
-| Fond de carte | [CARTO](https://carto.com/attributions) / OpenStreetMap |
+| Fond de carte | [OpenFreeMap](https://openfreemap.org) (vectoriel, sans clé), secours [OpenStreetMap](https://www.openstreetmap.org) |
 
 Ce sont des services communautaires : merci de ne pas les solliciter de façon automatisée. Si l’un d’eux ne répond
 pas, Barypote bascule sur une estimation et l’indique.

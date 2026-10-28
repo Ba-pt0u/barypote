@@ -51,6 +51,23 @@ describe('findMeetingPoint', () => {
     expect(res.warnings).toEqual([]);
   });
 
+  it('émet la zone équitable avant les lieux, puis l’affine', async () => {
+    const events: string[] = [];
+    const hulls: number[] = [];
+    const res = await findMeetingPoint([person('A', 48.85, 2.2, 'car'), person('B', 48.85, 2.5, 'car')], opts(), (e) => {
+      events.push(e.type === 'step' ? `${e.id}:${e.state}` : e.type);
+      if (e.type === 'zone') hulls.push(haversine(e.hull[0], e.hull[Math.floor(e.hull.length / 2)]));
+    });
+    const firstZone = events.indexOf('zone');
+    expect(firstZone).toBeGreaterThan(-1);
+    expect(firstZone).toBeLessThan(events.indexOf('pois'));
+    expect(events.indexOf('pois:active')).toBeLessThan(events.indexOf('refine:done'));
+    expect(res.grids.length).toBeGreaterThanOrEqual(3);
+    // La zone se resserre au fil des niveaux.
+    expect(hulls[hulls.length - 1]).toBeLessThan(hulls[0]);
+    expect(res.hull.length).toBeGreaterThanOrEqual(3);
+  });
+
   it('un cycliste et un automobiliste : on se rapproche du cycliste', async () => {
     const car = person('Auto', 48.85, 2.2, 'car');
     const bike = person('Vélo', 48.85, 2.4, 'bike');

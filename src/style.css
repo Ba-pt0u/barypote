@@ -448,6 +448,43 @@ button:disabled {
   margin: 8px 0 0;
   font-size: 15px;
 }
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--soft);
+  border-radius: 12px;
+  display: grid;
+  gap: 6px;
+  font-size: 13.5px;
+}
+.steps:empty {
+  display: none;
+}
+.steps li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.steps li.done {
+  color: var(--muted);
+}
+.steps li.error {
+  color: var(--danger);
+}
+.steps .ok,
+.steps .ko {
+  width: 16px;
+  text-align: center;
+  font-weight: 700;
+  flex: none;
+}
+.steps .ok {
+  color: #2f9e6e;
+}
+.zone-card.live .bars .fill {
+  transition: width 0.5s ease;
+}
 .progress {
   display: flex;
   gap: 10px;
@@ -760,6 +797,8 @@ footer a {
 }
 @media (prefers-reduced-motion: reduce) {
   .zone-pin::after,
+  .heat-cell,
+  .poi-dot,
   .spinner {
     animation: none;
   }
@@ -792,6 +831,27 @@ footer a {
 
 .leaflet-container {
   font: inherit;
+}
+.heat-cell {
+  animation: cell-in 0.35s ease-out backwards;
+}
+@keyframes cell-in {
+  from {
+    opacity: 0;
+  }
+}
+.fair-zone {
+  stroke: var(--accent);
+  fill: var(--accent);
+  transition: d 0.6s ease;
+}
+.poi-dot {
+  animation: cell-in 0.4s ease-out backwards;
+}
+@media (prefers-color-scheme: dark) {
+  .raster-tiles .leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.85);
+  }
 }
 .leaflet-tooltip {
   border-radius: 8px;

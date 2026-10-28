@@ -16,15 +16,23 @@ interface Element {
   tags?: Record<string, string>;
 }
 
-export function buildQuery(category: Category, center: LatLon, radius: number, limit = 80): string {
-  const around = `(around:${Math.round(radius)},${center.lat.toFixed(6)},${center.lon.toFixed(6)})`;
-  const parts = category.filters.map((f) => `nwr${f}["name"]${around};`).join('');
+/** Zone de recherche : un cercle, ou un polygone (la zone équitable). */
+export type Area = { center: LatLon; radius: number } | { polygon: LatLon[] };
+
+function areaFilter(area: Area): string {
+  if ('polygon' in area) return `(poly:"${area.polygon.map((p) => `${p.lat.toFixed(5)} ${p.lon.toFixed(5)}`).join(' ')}")`;
+  return `(around:${Math.round(area.radius)},${area.center.lat.toFixed(6)},${area.center.lon.toFixed(6)})`;
+}
+
+export function buildQuery(category: Category, area: Area, limit = 80): string {
+  const filter = areaFilter(area);
+  const parts = category.filters.map((f) => `nwr${f}["name"]${filter};`).join('');
   return `[out:json][timeout:25];(${parts});out center tags ${limit};`;
 }
 
-/** Lieux OpenStreetMap de la catégorie autour d'un point. */
-export async function findPois(category: Category, center: LatLon, radius: number): Promise<Poi[]> {
-  const body = new URLSearchParams({ data: buildQuery(category, center, radius) });
+/** Lieux OpenStreetMap de la catégorie dans la zone donnée. */
+export async function findPois(category: Category, area: Area, limit = 80): Promise<Poi[]> {
+  const body = new URLSearchParams({ data: buildQuery(category, area, limit) });
   let lastErr: unknown;
   for (const url of SERVERS) {
     const ctrl = new AbortController();

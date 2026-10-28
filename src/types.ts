@@ -52,13 +52,32 @@ export interface SearchOptions {
   parking: number;
 }
 
+/** Une passe de la recherche : grille de points évalués, de plus en plus fine. */
+export interface GridLayer {
+  cells: Candidate[];
+  /** Côté d'une cellule, en mètres. */
+  step: number;
+  level: number;
+}
+
 export interface SearchResult {
   zone: Candidate;
-  /** Points de la grille évalués, pour la carte d'équité. */
-  grid: Candidate[];
+  /** Zone équitable finale (polygone). */
+  hull: LatLon[];
+  /** Grilles évaluées, pour la carte d'équité. */
+  grids: GridLayer[];
   places: Candidate[];
   warnings: string[];
 }
+
+export type StepId = 'transit' | 'zone' | 'refine' | 'pois' | 'rank';
+
+/** Événements émis pendant la recherche, pour l'affichage en direct. */
+export type SearchEvent =
+  | { type: 'step'; id: StepId; state: 'active' | 'done' | 'error'; label: string }
+  | { type: 'grid'; layer: GridLayer }
+  | { type: 'zone'; best: Candidate; hull: LatLon[]; level: number }
+  | { type: 'pois'; pois: Poi[] };
 
 export interface RouteLeg {
   mode: string;
