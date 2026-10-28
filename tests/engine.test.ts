@@ -89,6 +89,17 @@ describe('findMeetingPoint', () => {
     await expect(findMeetingPoint(people, opts({ maxTime: 20 }))).rejects.toThrow(/Augmentez/);
   });
 
+  it('serveurs de lieux en panne : la zone est quand même renvoyée, avec un avertissement', async () => {
+    const real = globalThis.fetch;
+    vi.stubGlobal('fetch', async (input: string, init?: RequestInit) =>
+      String(input).includes('interpreter') ? new Response('busy', { status: 504 }) : real(input, init),
+    );
+    const res = await findMeetingPoint([person('A', 48.85, 2.2, 'car'), person('B', 48.85, 2.5, 'car')], opts());
+    expect(Number.isFinite(res.zone.score)).toBe(true);
+    expect(res.places).toEqual([]);
+    expect(res.warnings.join(' ')).toMatch(/overpass-api\.de : erreur 504.*maps\.mail\.ru : erreur 504/);
+  });
+
   it('service de transport en panne → repli estimé avec avertissement', async () => {
     const real = globalThis.fetch;
     vi.stubGlobal('fetch', async (input: string, init?: RequestInit) =>

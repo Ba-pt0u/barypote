@@ -114,3 +114,22 @@ export function squareCorners(p: LatLon, size: number): LatLon[] {
   const h = size / 2;
   return [offset(p, -h, -h), offset(p, h, -h), offset(p, h, h), offset(p, -h, h)];
 }
+
+/** Rectangle englobant (sud, ouest, nord, est). */
+export function bbox(points: LatLon[]): [number, number, number, number] {
+  const lats = points.map((p) => p.lat);
+  const lons = points.map((p) => p.lon);
+  return [Math.min(...lats), Math.min(...lons), Math.max(...lats), Math.max(...lons)];
+}
+
+/** Point dans un polygone (lancer de rayon). */
+export function insidePolygon(p: LatLon, poly: LatLon[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i];
+    const b = poly[j];
+    if (a.lat > p.lat !== b.lat > p.lat && p.lon < ((b.lon - a.lon) * (p.lat - a.lat)) / (b.lat - a.lat) + a.lon)
+      inside = !inside;
+  }
+  return inside;
+}

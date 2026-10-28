@@ -4,16 +4,24 @@ import { CATEGORIES } from '../src/categories';
 
 describe('overpass', () => {
   it('requête avec un filtre par famille de tags', () => {
-    const q = buildQuery(CATEGORIES.find((c) => c.id === 'culture')!, { center: { lat: 48.1, lon: -1.6 }, radius: 1000 });
+    const q = buildQuery(CATEGORIES.find((c) => c.id === 'culture')!, [
+      { area: { center: { lat: 48.1, lon: -1.6 }, radius: 1000 }, limit: 50 },
+    ]);
     expect(q).toContain('nwr["tourism"~"^(museum|gallery)$"]["name"](around:1000,48.100000,-1.600000);');
     expect(q).toContain('nwr["amenity"~"^(theatre|arts_centre)$"]["name"](around:1000,48.100000,-1.600000);');
-    expect(q).toMatch(/out center tags \d+;$/);
+    expect(q).toMatch(/out center tags qt 50;$/);
   });
 
-  it('requête limitée à un polygone', () => {
-    const q = buildQuery(CATEGORIES[0], { polygon: [{ lat: 48, lon: 2 }, { lat: 48.1, lon: 2 }, { lat: 48.1, lon: 2.1 }] }, 200);
-    expect(q).toContain('(poly:"48.00000 2.00000 48.10000 2.00000 48.10000 2.10000")');
-    expect(q).toMatch(/out center tags 200;$/);
+  it('une seule requête pour plusieurs zones, chacune avec sa limite', () => {
+    const q = buildQuery(CATEGORIES[1], [
+      { area: { center: { lat: 48, lon: 2 }, radius: 900 }, limit: 80 },
+      { area: { bbox: [48, 2, 48.1, 2.1] }, limit: 200 },
+    ]);
+    expect(q).toBe(
+      '[out:json][timeout:20];' +
+        '(nwr["amenity"="restaurant"]["name"](around:900,48.000000,2.000000););out center tags qt 80;' +
+        '(nwr["amenity"="restaurant"]["name"](48.00000,2.00000,48.10000,2.10000););out center tags qt 200;',
+    );
   });
 
   it('parse : centre des bâtiments, doublons et lieux sans nom', () => {

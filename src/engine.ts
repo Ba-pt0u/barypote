@@ -1,8 +1,8 @@
 import { mapLimit } from './api/http';
-import { findPois } from './api/overpass';
+import { findPois, type Area } from './api/overpass';
 import { travelMatrix } from './api/osrm';
 import { reachableStops, TransitReach } from './api/transit';
-import { centroid, convexHull, grid, haversine, spread, squareCorners } from './geo';
+import { bbox, centroid, convexHull, grid, haversine, insidePolygon, spread, squareCorners } from './geo';
 import { score } from './scoring';
 import type {
   Candidate,
@@ -176,8 +176,7 @@ export async function findMeetingPoint(
   step('zone', 'done', 'Zone équitable trouvée');
 
   // 2. Les lieux de la zone équitable sont cherchés pendant l'affinage du point.
-  const poisSearch = opts.category.filters.length ? searchPois(opts, hull, zone, emit, step) : null;
-  poisSearch?.catch(() => {}); // l'erreur éventuelle est traitée plus bas
+  const poisSearch = opts.category.filters.length ? searchPois(opts, hull, zone, emit, step, ev.warnings) : null;
 
   // 3. Affinage : grilles de plus en plus fines autour du meilleur point.
   for (let level = 1; level <= MAX_LEVELS && cell / ZOOM >= MIN_CELL; level++) {
@@ -194,11 +193,14 @@ export async function findMeetingPoint(
 
   // 4. Classement des lieux selon les temps de trajet réels.
   let places: Candidate[] = [];
-  if (poisSearch) {
-    let pois = await poisSearch;
+  let pois = poisSearch ? await poisSearch : null;
+  if (pois) {
     if (haversine(zone, firstZone) > 600 || pois.length < 5) {
       // Le point a bougé pendant l'affinage, ou la zone est pauvre en lieux : on cherche aussi autour du point final.
-      pois = dedupe([...pois, ...(await poisAround(opts, zone, pois.length < 5 ? 5000 : 900).catch(() => []))]);
+      const more = await findPois(opts.category, [{ area: { center: zone, radius: pois.length < 5 ? 5000 : 900 }, limit: 80 }]).catch(
+        () => [],
+      );
+      pois = dedupe([...pois, ...more]);
       emit({ type: 'pois', pois });
     }
     if (!pois.length) ev.warnings.push(`Aucun lieu « ${opts.category.label} » trouvé autour du point.`);
@@ -218,13 +220,10 @@ function dedupe(pois: Poi[]): Poi[] {
   return pois.filter((p) => !seen.has(p.id) && seen.add(p.id));
 }
 
-async function poisAround(opts: SearchOptions, center: LatLon, radius: number) {
-  return findPois(opts.category, { center, radius });
-}
-
 /**
- * Deux requêtes en parallèle : dans toute la zone équitable (couverture), et au plus près du
- * meilleur point (dans les quartiers denses, la première ne renvoie qu'un échantillon).
+ * Lieux de la zone équitable : une seule requête Overpass couvrant le rectangle de la zone (filtré
+ * ensuite sur le polygone) et les abords immédiats du meilleur point (dans les quartiers denses,
+ * le rectangle ne renvoie qu'un échantillon). Un échec n'annule pas la recherche : la zone reste affichée.
  */
 async function searchPois(
   opts: SearchOptions,
@@ -232,20 +231,22 @@ async function searchPois(
   zone: LatLon,
   emit: (e: SearchEvent) => void,
   step: (id: StepId, state: 'active' | 'done' | 'error', label: string) => void,
-): Promise<Poi[]> {
+  warnings: string[],
+): Promise<Poi[] | null> {
   const what = opts.category.label.toLowerCase();
   step('pois', 'active', `Recherche des lieux (${what}) dans la zone…`);
-  const results = await Promise.allSettled([
-    hull.length >= 3 ? findPois(opts.category, { polygon: hull }, 200) : Promise.resolve([]),
-    poisAround(opts, zone, 900),
-  ]);
-  const ok = results.filter((r): r is PromiseFulfilledResult<Poi[]> => r.status === 'fulfilled');
-  if (!ok.length) {
-    step('pois', 'error', 'Recherche de lieux impossible');
-    throw (results[0] as PromiseRejectedResult).reason;
+  const near = 900;
+  try {
+    const areas: { area: Area; limit: number }[] = [{ area: { center: zone, radius: near }, limit: 80 }];
+    if (hull.length >= 3) areas.push({ area: { bbox: bbox(hull) }, limit: 200 });
+    const found = await findPois(opts.category, areas);
+    const pois = found.filter((p) => haversine(p, zone) <= near || insidePolygon(p, hull));
+    emit({ type: 'pois', pois });
+    step('pois', 'done', `${pois.length} lieu${pois.length > 1 ? 'x' : ''} trouvé${pois.length > 1 ? 's' : ''} dans la zone`);
+    return pois;
+  } catch (e) {
+    step('pois', 'error', 'Recherche de lieux impossible pour le moment');
+    warnings.push(`${(e as Error).message}. Le point de rencontre reste valable ; relancez la recherche dans un instant pour les lieux.`);
+    return null;
   }
-  const pois = dedupe(ok.flatMap((r) => r.value));
-  emit({ type: 'pois', pois });
-  step('pois', 'done', `${pois.length} lieu${pois.length > 1 ? 'x' : ''} trouvé${pois.length > 1 ? 's' : ''} dans la zone`);
-  return pois;
 }
