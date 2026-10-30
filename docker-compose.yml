@@ -6,6 +6,10 @@ services:
     # Pour construire l'image sur place à partir du code plutôt que de la télécharger :
     # build: .
     container_name: barypote
+    environment:
+      # Facultatif : lieux via Geoapify (plus fiable que les serveurs Overpass publics).
+      # Clé gratuite sur https://myprojects.geoapify.com — elle reste sur le serveur.
+      - GEOAPIFY_API_KEY=
     ports:
       - "8080:80"
     restart: unless-stopped

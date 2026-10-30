@@ -1,5 +1,5 @@
 import { mapLimit } from './api/http';
-import { findPois, type Area } from './api/overpass';
+import { findPois, type Area } from './api/places';
 import { travelMatrix } from './api/osrm';
 import { reachableStops, TransitReach } from './api/transit';
 import { bbox, centroid, convexHull, grid, haversine, insidePolygon, spread, squareCorners } from './geo';

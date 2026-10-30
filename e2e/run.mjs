@@ -3,7 +3,7 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { handle } from './fake-apis.mjs';
+import { calls, handle } from './fake-apis.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -15,7 +15,7 @@ mkdirSync('e2e/screenshots', { recursive: true });
 
 let server = null;
 if (!process.env.E2E_URL) {
-  server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'pipe' });
+  server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'pipe', detached: true });
   await new Promise((resolve, reject) => {
     server.stdout.on('data', (d) => String(d).includes(String(PORT)) && resolve());
     server.on('exit', (c) => reject(new Error(`vite preview exited ${c}`)));
@@ -110,7 +110,7 @@ try {
 
   await page.click('#share');
   const shared = await page.evaluate(() => navigator.clipboard.readText());
-  check(shared.includes('#'), 'lien de partage copié');
+  check(shared.includes('?p=') && shared.includes('lancer=1'), 'lien de partage copié (relance la recherche)');
 
   // Le lien de partage restaure le groupe dans un navigateur vierge.
   const other = await newPage({ width: 1366, height: 860 });
@@ -122,6 +122,47 @@ try {
 
   check(errors.length === 0, `aucune erreur JS ${errors.length ? JSON.stringify(errors) : ''}`);
   await ctx.close();
+
+  // --- Lien de recherche + lieux via Geoapify (serveur avec clé) ------------------------
+  const g = await newPage({ width: 1280, height: 800 });
+  const geoCalls = [];
+  await g.ctx.route('**/config.json', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: '{"places":"geoapify"}' }));
+  await g.ctx.route('**/api/geoapify/places?**', async (r) => {
+    const u = new URL(r.request().url());
+    geoCalls.push(u.searchParams.get('filter'));
+    const f = u.searchParams.get('filter');
+    const [lon, lat] = f.replace(/^(circle|rect):/, '').split(',').map(Number);
+    const features = ['Le Zinc Geo', 'Chez Apify', 'Bar du Proxy'].map((name, k) => ({
+      type: 'Feature',
+      properties: {
+        name,
+        lat: lat + 0.001 * (k + 1),
+        lon: lon + 0.001 * (k + 1),
+        place_id: `pid${k}`,
+        categories: ['catering.bar'],
+        datasource: { raw: { osm_type: 'n', osm_id: 900 + k, amenity: 'bar', name } },
+      },
+      geometry: { type: 'Point', coordinates: [lon, lat] },
+    }));
+    await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ features }) });
+  });
+  const link =
+    `${BASE}?p=Alice;48.88670,2.34310;tc;Montmartre&p=Bastien;48.84740,2.43960;voiture;Vincennes` +
+    `&p=Chlo%C3%A9;48.83530,2.24110;velo;Boulogne&lieu=bar&critere=minimax&depart=2026-11-07T19:00&max=75&parking=8&lancer=1&choix=node/901`;
+  const overpassBefore = calls.filter((c) => c.includes('interpreter')).length;
+  await g.page.goto(link);
+  await g.page.locator('.place.selected').waitFor({ timeout: 20000 });
+  check(true, 'lien avec lancer=1 : recherche relancée automatiquement');
+  check((await g.page.locator('.place.selected .place-title b').innerText()) === 'Chez Apify', 'lien avec choix= : lieu resélectionné');
+  check((await g.page.locator('#max-time').inputValue()) === '75' && (await g.page.locator('#parking').inputValue()) === '8', 'options restaurées depuis l’URL');
+  check((await g.page.locator('#departure').inputValue()) === '2026-11-07T19:00', 'heure de départ restaurée');
+  check((await g.page.locator('[data-crit="minimax"]').getAttribute('aria-checked')) === 'true', 'critère restauré');
+  check(geoCalls.length >= 1 && calls.filter((c) => c.includes('interpreter')).length === overpassBefore, `lieux via Geoapify, pas d’Overpass (${geoCalls.join(' | ')})`);
+  const url = new URL(g.page.url());
+  check(url.searchParams.get('lancer') === '1' && url.searchParams.get('choix') === 'node/901', `URL à jour après la recherche : ${url.search.slice(0, 80)}…`);
+  await g.page.click('[data-cat="restaurant"]');
+  check(new URL(g.page.url()).searchParams.get('lancer') === null, 'changer un critère retire « lancer » de l’URL');
+  await g.ctx.close();
 
   // --- Mobile, thème sombre ------------------------------------------------------------
   const m = await newPage({ width: 390, height: 844 }, 'dark');
@@ -149,6 +190,7 @@ try {
   failed = true;
 } finally {
   await browser.close();
-  server?.kill();
+  // Arrête npx et le serveur Vite qu'il a lancé (même groupe de processus).
+  if (server) process.kill(-server.pid, 'SIGTERM');
 }
 process.exit(failed ? 1 : 0);

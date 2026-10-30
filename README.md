@@ -19,7 +19,8 @@ restaurants, cafés… autour, classés selon le critère d’équité choisi.
 - **Recherche en direct** : la grille d’équité s’affiche dès les premiers calculs, la **zone équitable** (contour
   pointillé) se resserre à chaque niveau d’affinage, et les lieux de cette zone sont cherchés en parallèle.
 - **Carte d’équité** : une couche de chaleur montre les zones justes (vert) et injustes (rouge).
-- **Lien de partage** : tout le groupe (adresses, modes, préférences) tient dans l’URL, à envoyer dans la conversation.
+- **Recherche dans l’URL** : participants, critères et options sont des paramètres lisibles ; après une recherche,
+  le lien la relance à l’ouverture et resélectionne le lieu choisi (voir plus bas).
 - **Résumé copiable** (« On se retrouve à… ») avec le temps de trajet de chacun.
 - Options : heure de départ (horaires de transports), trajet maximal accepté, temps pour se garer.
 - Saisie par adresse (autocomplétion), coordonnées, géolocalisation ou clic sur la carte. Thème sombre, mobile.
@@ -42,11 +43,28 @@ Tout tourne dans le navigateur, **sans clé d’API ni serveur** :
 | Adresses | [Photon](https://photon.komoot.io) (OpenStreetMap) |
 | Voiture, vélo, marche | [OSRM FOSSGIS](https://routing.openstreetmap.de), secours [OSRM démo](https://project-osrm.org) |
 | Transports en commun | [Transitous](https://transitous.org) (MOTIS, données GTFS ouvertes) |
-| Lieux | [Overpass API](https://overpass-api.de) (OpenStreetMap) |
+| Lieux | [Overpass API](https://overpass-api.de) (OpenStreetMap), ou [Geoapify](https://www.geoapify.com) avec une clé (voir plus bas) |
 | Fond de carte | [OpenFreeMap](https://openfreemap.org) (vectoriel, sans clé), secours [OpenStreetMap](https://www.openstreetmap.org) |
 
 Ce sont des services communautaires : merci de ne pas les solliciter de façon automatisée. Si l’un d’eux ne répond
 pas, Barypote bascule sur une estimation et l’indique.
+
+## Paramètres d’URL
+
+L’URL suit la recherche en cours : la recharger ou l’envoyer reproduit la même recherche.
+
+| Paramètre | Exemple | Rôle |
+| --- | --- | --- |
+| `p` (répété) | `Alice;48.88670,2.34310;tc;Montmartre` | nom ; latitude,longitude ; mode (`voiture`, `tc`, `velo`, `pied`) ; libellé |
+| `lieu` | `bar` | `bar`, `restaurant`, `cafe`, `fastfood`, `fun`, `culture`, `park`, `station`, `none` |
+| `critere` | `minimax` | `balanced` (équilibré), `minimax` (personne ne galère), `total` |
+| `depart` | `2026-11-07T19:00` | date et heure de départ (heure locale) |
+| `max` | `90` | trajet maximal pour chacun, en minutes |
+| `parking` | `5` | minutes ajoutées aux trajets en voiture |
+| `lancer` | `1` | lance la recherche à l’ouverture |
+| `choix` | `node/123` | lieu à sélectionner dans les résultats |
+
+Exemple : `?p=Alice;48.8867,2.3431;tc;Montmartre&p=Bob;48.8474,2.4396;voiture;Vincennes&lieu=bar&critere=minimax&lancer=1`
 
 ## Développement
 
@@ -96,6 +114,20 @@ docker run -d --name barypote -p 8080:80 --restart unless-stopped ghcr.io/ba-pt0
 # ou, pour construire depuis le code :
 docker build -t barypote . && docker run -d -p 8080:80 barypote
 ```
+
+### Clé Geoapify (recommandée)
+
+Les serveurs Overpass publics sont parfois saturés (« Recherche de lieux impossible »). Avec une clé
+[Geoapify](https://www.geoapify.com) gratuite (3 000 crédits par jour, largement assez pour un usage entre amis),
+les lieux viennent de son API Places, qui s’appuie sur les mêmes données OpenStreetMap.
+
+1. Créer un compte et un projet sur <https://myprojects.geoapify.com>, copier la clé API.
+2. La renseigner dans la variable `GEOAPIFY_API_KEY` du conteneur (champ *Clé API Geoapify* du modèle Unraid,
+   ou `-e GEOAPIFY_API_KEY=…`), puis redémarrer.
+
+La clé reste sur le serveur : le navigateur interroge `/api/geoapify/places` et nginx ajoute la clé (débit limité à
+5 requêtes/s par visiteur). En cas d’échec de Geoapify, l’appli repasse automatiquement par Overpass.
+Le journal du conteneur indique au démarrage le fournisseur utilisé.
 
 ### HTTPS (recommandé)
 

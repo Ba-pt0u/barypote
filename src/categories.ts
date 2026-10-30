@@ -1,10 +1,10 @@
 import type { Category } from './types';
 
 export const CATEGORIES: Category[] = [
-  { id: 'bar', label: 'Bar', emoji: '🍻', filters: ['["amenity"~"^(bar|pub|biergarten)$"]'] },
-  { id: 'restaurant', label: 'Restaurant', emoji: '🍽️', filters: ['["amenity"="restaurant"]'] },
-  { id: 'cafe', label: 'Café', emoji: '☕', filters: ['["amenity"="cafe"]'] },
-  { id: 'fastfood', label: 'Sur le pouce', emoji: '🥙', filters: ['["amenity"="fast_food"]'] },
+  { id: 'bar', label: 'Bar', emoji: '🍻', filters: ['["amenity"~"^(bar|pub|biergarten)$"]'], geoapify: ['catering.bar', 'catering.pub', 'catering.biergarten'] },
+  { id: 'restaurant', label: 'Restaurant', emoji: '🍽️', filters: ['["amenity"="restaurant"]'], geoapify: ['catering.restaurant'] },
+  { id: 'cafe', label: 'Café', emoji: '☕', filters: ['["amenity"="cafe"]'], geoapify: ['catering.cafe'] },
+  { id: 'fastfood', label: 'Sur le pouce', emoji: '🥙', filters: ['["amenity"="fast_food"]'], geoapify: ['catering.fast_food'] },
   {
     id: 'fun',
     label: 'Activité',
@@ -13,16 +13,18 @@ export const CATEGORIES: Category[] = [
       '["leisure"~"^(bowling_alley|escape_game|amusement_arcade|miniature_golf|trampoline_park)$"]',
       '["amenity"~"^(cinema|karaoke_box)$"]',
     ],
+    geoapify: ['entertainment.bowling_alley', 'entertainment.escape_game', 'entertainment.amusement_arcade', 'entertainment.miniature_golf', 'entertainment.cinema'],
   },
   {
     id: 'culture',
     label: 'Culture',
     emoji: '🎭',
     filters: ['["tourism"~"^(museum|gallery)$"]', '["amenity"~"^(theatre|arts_centre)$"]'],
+    geoapify: ['entertainment.museum', 'entertainment.culture'],
   },
-  { id: 'park', label: 'Parc', emoji: '🌳', filters: ['["leisure"~"^(park|garden)$"]'] },
-  { id: 'station', label: 'Gare', emoji: '🚉', filters: ['["railway"="station"]'] },
-  { id: 'none', label: 'Juste le point', emoji: '📍', filters: [] },
+  { id: 'park', label: 'Parc', emoji: '🌳', filters: ['["leisure"~"^(park|garden)$"]'], geoapify: ['leisure.park'] },
+  { id: 'station', label: 'Gare', emoji: '🚉', filters: ['["railway"="station"]'], geoapify: ['public_transport.train'] },
+  { id: 'none', label: 'Juste le point', emoji: '📍', filters: [], geoapify: [] },
 ];
 
 const KIND_LABELS: Record<string, string> = {

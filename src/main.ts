@@ -7,7 +7,7 @@ import { findMeetingPoint } from './engine';
 import { centroid } from './geo';
 import { MeetingMap } from './map';
 import { CRITERIA, formatMinutes, stats } from './scoring';
-import { decodeState, encodeState } from './share';
+import { decodeState, encodeState, fromQuery, toQuery } from './share';
 import type { Candidate, Criterion, LatLon, Mode, Participant, Route, SearchEvent, SearchResult, StepId } from './types';
 
 const COLORS = ['#e4572e', '#2e86ab', '#8a4fff', '#17a398', '#f2a541', '#d7263d', '#3d5a80', '#43aa8b', '#b5179e', '#6c757d'];
@@ -42,6 +42,8 @@ const state = {
   routes: new Map<string, { participant: Participant; route: Route | null }[]>(),
   picking: null as string | null,
   searching: false,
+  /** Une recherche a été faite avec les critères actuels : le lien la relance. */
+  ran: false,
 };
 
 function makeParticipant(partial: Partial<Participant> = {}): Participant {
@@ -57,16 +59,30 @@ function makeParticipant(partial: Partial<Participant> = {}): Participant {
   };
 }
 
-function save() {
+function currentQuery() {
+  return toQuery({
+    ...state,
+    departure: departure.value,
+    maxTime: Number(maxTime.value),
+    parking: Number(parking.value),
+    run: state.ran,
+    selected: state.ran ? (state.selected ?? undefined) : undefined,
+  });
+}
+
+/** Garde l'URL synchronisée avec la recherche : on peut la recharger ou l'envoyer telle quelle. */
+function save({ criteriaChanged = true } = {}) {
+  if (criteriaChanged) state.ran = false;
+  history.replaceState(null, '', `${location.pathname}?${currentQuery()}`);
   try {
-    localStorage.setItem(STORAGE_KEY, encodeState(state));
+    localStorage.setItem(STORAGE_KEY, encodeState({ participants: state.participants, category: state.category, criterion: state.criterion }));
   } catch {
     /* stockage indisponible (navigation privée…) */
   }
 }
 
 function load() {
-  let shared = decodeState(location.hash);
+  let shared = fromQuery(location.search) ?? decodeState(location.hash);
   if (!shared) {
     try {
       shared = decodeState(localStorage.getItem(STORAGE_KEY) ?? '');
@@ -78,8 +94,12 @@ function load() {
     for (const p of shared.participants.slice(0, MAX_PEOPLE)) state.participants.push(makeParticipant(p));
     if (CATEGORIES.some((c) => c.id === shared!.category)) state.category = shared.category;
     if (CRITERIA.some((c) => c.id === shared!.criterion)) state.criterion = shared.criterion;
+    if (shared.departure) departure.value = shared.departure;
+    if (shared.maxTime != null) maxTime.value = String(shared.maxTime);
+    if (shared.parking != null) parking.value = String(shared.parking);
   }
   while (state.participants.length < 2) state.participants.push(makeParticipant());
+  return shared;
 }
 
 // ---------------------------------------------------------------------------
@@ -381,7 +401,7 @@ const syncLabels = () => {
 };
 maxTime.addEventListener('input', syncLabels);
 parking.addEventListener('input', syncLabels);
-syncLabels();
+for (const el of [departure, maxTime, parking]) el.addEventListener('change', () => save());
 
 $<HTMLInputElement>('#heat-toggle').addEventListener('change', (e) => map.toggleHeat((e.target as HTMLInputElement).checked));
 
@@ -442,6 +462,8 @@ async function search() {
     );
     if (missing.length) res.warnings.unshift(`${missing.map((p) => p.name).join(', ')} : adresse manquante, ignoré(e)s.`);
     state.result = res;
+    state.ran = true;
+    save({ criteriaChanged: false });
     state.zoneLabel = '';
     renderResults(people);
     map.showResult(res, people);
@@ -540,7 +562,7 @@ function placeCard(c: Candidate, i: number, people: Participant[], scale: number
     <div class="route-details"></div>
     <div class="place-actions">
       <button type="button" class="ghost small copy">📋 Copier pour le groupe</button>
-      <a class="ghost small" target="_blank" rel="noopener" href="https://www.openstreetmap.org/${poi.id}">OpenStreetMap</a>
+      ${/^(node|way|relation)\//.test(poi.id) ? `<a class="ghost small" target="_blank" rel="noopener" href="https://www.openstreetmap.org/${poi.id}">OpenStreetMap</a>` : ''}
       <a class="ghost small" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${poi.name} ${c.lat},${c.lon}`)}">Google Maps</a>
       ${poi.tags.website ? `<a class="ghost small" target="_blank" rel="noopener" href="${esc(safeUrl(poi.tags.website))}">Site web</a>` : ''}
     </div>
@@ -570,6 +592,7 @@ async function selectPlace(id: string) {
   const c = res?.places.find((x) => x.poi?.id === id);
   if (!res || !c) return;
   state.selected = id;
+  if (state.ran) save({ criteriaChanged: false });
   results.querySelectorAll('.place').forEach((el) => el.classList.toggle('selected', (el as HTMLElement).dataset.id === id));
   map.highlightPlace(id);
   const card = results.querySelector<HTMLElement>(`.place[data-id="${CSS.escape(id)}"]`);
@@ -646,11 +669,16 @@ async function copy(text: string, okMsg: string) {
 }
 
 $('#share').addEventListener('click', () => {
-  const url = `${location.origin}${location.pathname}#${encodeState(state)}`;
-  history.replaceState(null, '', url);
+  save({ criteriaChanged: false });
+  const url = location.href;
   if (navigator.share && matchMedia('(pointer: coarse)').matches) {
     navigator.share({ title: 'Barypote', text: 'Où se retrouve-t-on ?', url }).catch(() => {});
-  } else copy(url, 'Lien copié : envoyez-le au groupe, chacun verra les mêmes participants.');
+  } else copy(
+      url,
+      state.ran
+        ? 'Lien copié : en l’ouvrant, chacun retrouve la même recherche et ses résultats.'
+        : 'Lien copié : envoyez-le au groupe, chacun verra les mêmes participants et critères.',
+    );
 });
 
 let toastTimer = 0;
@@ -670,7 +698,12 @@ function toast(msg: string) {
 
 // ---------------------------------------------------------------------------
 
-load();
+const initial = load();
+syncLabels();
 renderChoices();
 participantsChanged(true);
+if (initial?.run)
+  search().then(() => {
+    if (initial.selected && state.result?.places.some((c) => c.poi?.id === initial.selected)) selectPlace(initial.selected);
+  });
 window.addEventListener('resize', () => map.invalidate());

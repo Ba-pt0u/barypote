@@ -42,7 +42,7 @@ export function buildQuery(category: Category, areas: { area: Area; limit: numbe
 }
 
 /** Lieux OpenStreetMap de la catégorie dans les zones données, en essayant plusieurs serveurs. */
-export async function findPois(category: Category, areas: { area: Area; limit: number }[]): Promise<Poi[]> {
+export async function findPoisOverpass(category: Category, areas: { area: Area; limit: number }[]): Promise<Poi[]> {
   const body = new URLSearchParams({ data: buildQuery(category, areas) }).toString();
   const failures: string[] = [];
   for (const url of SERVERS) {

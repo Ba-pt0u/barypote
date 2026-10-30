@@ -23,6 +23,8 @@ export interface Category {
   emoji: string;
   /** Filtres Overpass, ex. `["amenity"~"^(bar|pub)$"]`. Vide = pas de recherche de lieu. */
   filters: string[];
+  /** Catégories équivalentes de l'API Geoapify (Places v2). */
+  geoapify: string[];
 }
 
 export interface Poi extends LatLon {
